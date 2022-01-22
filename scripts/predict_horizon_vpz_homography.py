@@ -1,6 +1,21 @@
 # Author: Syed Ammar Abbas
 # VGG, 2019
 
+'''
+Notes: 
+    - To run this code, you need to use an environment with TensorFlow == 1.13.2
+    - Make sure the following file are installed completely: 
+        a. data/saved_models/incp4/model.ckpt-17721.data-00000-of-00001
+        b. data/saved_models/vgg16/model.ckpt-20227.data-00000-of-00001
+
+To predict bird's eye view from an image or a video, run the Following command: 
+    python scripts/predict_horizon_vpz_homography.py --view_path $IMAGE_PATH --model_name $CNN_MODEL
+    exp. 
+    python scripts/predict_horizon_vpz_homography.py --view_path $'/videos/0000.avi' --model_name $'vgg-16'
+    python scripts/predict_horizon_vpz_homography.py --view_path $'/images/0000.png' --model_name $'inception-v4'
+
+'''
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -19,14 +34,20 @@ import tensorflow as tf
 # Main slim library
 from tensorflow.contrib import slim
 
+import sys
+dir_path = os.path.abspath(os.getcwd())
+sys.path.extend([dir_path, dir_path+'/nets/'])
+
 from nets import vgg
 from nets import inception_v4
 from utils.transformations import rotation_matrix
 from utils.geometry import get_slope_intercept_from_abc_line
 
+import mimetypes
+
 
 tf.app.flags.DEFINE_string(
-    'img_path', None,
+    'view_path', None,
     'Path for the input image.')
 
 tf.app.flags.DEFINE_string(
@@ -37,7 +58,7 @@ tf.app.flags.DEFINE_string(
     'train_dir', '',
     'Two models available for prediction (vgg-16 and inception-v4')
 
-tf.app.flags.mark_flag_as_required('img_path')
+tf.app.flags.mark_flag_as_required('view_path')
 tf.app.flags.mark_flag_as_required('model_name')
 
 FLAGS = tf.app.flags.FLAGS
@@ -393,8 +414,8 @@ def main(_):
         net_height = 224
         consider_top = 41
 
-        data = np.load('data/cnn_parameters/carlavp_label_to_horvpz_fov_pitch.npz')
-        train_dir = 'data/saved_models/vgg16/model.ckpt-20227'
+        data = np.load(dir_path+'/data/cnn_parameters/carlavp_label_to_horvpz_fov_pitch.npz')
+        train_dir = dir_path+'/data/saved_models/vgg16/model.ckpt-20227'
 
         _R_MEAN = 123.68
         _G_MEAN = 116.78
@@ -408,8 +429,8 @@ def main(_):
         net_height = 299
         consider_top = 53
 
-        data = np.load('data/cnn_parameters/carlavp-299x299_label_to_horvpz_fov_pitch.npz')
-        train_dir = 'data/saved_models/incp4/model.ckpt-17721'
+        data = np.load(dir_path+'/data/cnn_parameters/carlavp-299x299_label_to_horvpz_fov_pitch.npz')
+        train_dir = dir_path+'/data/saved_models/incp4/model.ckpt-17721'
     else:
         print("Invalid CNN model name specified")
         return
@@ -425,12 +446,31 @@ def main(_):
 
     num_bins = 500
 
-    img_path = FLAGS.img_path
-    img_cv = cv2.imread(img_path)
+    view_path = FLAGS.view_path
+
+    # Check path type and read image/video
+    mimetypes.init()
+
+    mimestart = mimetypes.guess_type(view_path)[0]
+
+    if mimestart != None:
+        mimestart = mimestart.split('/')[0]
+
+        if mimestart in ['image']:
+            img_cv = cv2.imread(view_path)
+        elif mimestart in ['video']:
+            # Capture from camera
+            cap = cv2.VideoCapture(view_path)
+            # read first frame & process
+            ret, img_cv = cap.read()
+    
+    
     img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
     orig_height, orig_width, orig_channels = img_cv.shape
 
     my_img = cv2.resize(img_cv, dsize=(net_width, net_height), interpolation=cv2.INTER_CUBIC)
+
+
 
     if FLAGS.model_name == 'vgg-16':
         my_img = (np.array(my_img, np.float32))
@@ -519,7 +559,7 @@ def main(_):
     # plt.yticks([])
     plt.show()
     os.makedirs("output/", exist_ok=True)
-    txt_file = 'output/' + img_path[img_path.rfind('/') + 1:img_path.rfind(
+    txt_file = 'output/' + view_path[view_path.rfind('/') + 1:view_path.rfind(
         '.')] + '_homography_matrix_' + FLAGS.model_name + '.txt'
     np.savetxt(txt_file, scaled_overhead_hmatrix)
     print("Homography matrix saved to the text file:", txt_file)
