@@ -11,7 +11,7 @@ Notes:
 To predict bird's eye view from an image or a video, run the Following command: 
     python scripts/predict_horizon_vpz_homography.py --view_path $IMAGE_PATH --model_name $CNN_MODEL
     exp. 
-    python scripts/predict_horizon_vpz_homography.py --view_path $'/videos/0000.avi' --model_name $'vgg-16'
+    python scripts/predict_horizon_vpz_homography.py --view_path $'/videos/000.avi' --model_name $'vgg-16'
     python scripts/predict_horizon_vpz_homography.py --view_path $'/images/0000.png' --model_name $'inception-v4'
 
 '''
@@ -266,6 +266,7 @@ def get_overhead_hmatrix_from_4cameraparams(fx, fy, my_tilt, my_roll, img_dims, 
     if verbose:
         print("R_overhead:\n", R_overhead)
 
+
     R_slant = rotation_matrix((pi / 2) + my_tilt, xaxis)[:3, :3]
     if verbose:
         print("R_slant:\n", R_slant)
@@ -459,10 +460,10 @@ def main(_):
         if mimestart in ['image']:
             img_cv = cv2.imread(view_path)
         elif mimestart in ['video']:
-            # Capture from camera
-            cap = cv2.VideoCapture(view_path)
+            # Capture from video
+            video = cv2.VideoCapture(view_path)
             # read first frame & process
-            ret, img_cv = cap.read()
+            ret, img_cv = video.read()
     
     
     img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
@@ -555,15 +556,52 @@ def main(_):
     warped = cv2.warpPerspective(img_cv, scaled_overhead_hmatrix, dsize=target_dim, flags=cv2.INTER_CUBIC)
 
     plt.imshow(warped)
-    # plt.xticks([])
-    # plt.yticks([])
     plt.show()
+
+    # Save Homography matrix 
     os.makedirs("output/", exist_ok=True)
     txt_file = 'output/' + view_path[view_path.rfind('/') + 1:view_path.rfind(
         '.')] + '_homography_matrix_' + FLAGS.model_name + '.txt'
     np.savetxt(txt_file, scaled_overhead_hmatrix)
     print("Homography matrix saved to the text file:", txt_file)
     print("------------------------------------------------")
+
+    if mimestart in ['image']:
+        
+        # Save the image
+        warped = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
+        cv2.imwrite("output/" + view_path[view_path.rfind('/') + 1:view_path.rfind(
+            '.')] + FLAGS.model_name + '.jpg', warped)
+        print("The Transformed image was successfully saved")
+        print("------------------------------------------------")
+    
+    elif mimestart in ['video']:
+    
+        # Transform the video and Save it
+        video = cv2.VideoCapture(view_path)
+
+        result = cv2.VideoWriter("output/" + view_path[view_path.rfind('/') + 1:view_path.rfind(
+                            '.')] + FLAGS.model_name + '.avi',
+                            cv2.VideoWriter_fourcc(*'MJPG'),
+                            10, target_dim)
+            
+        while(True):
+            ret, frame = video.read()
+        
+            if ret == True: 
+                warped = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
+                warped = cv2.warpPerspective(frame, scaled_overhead_hmatrix, dsize=target_dim, flags=cv2.INTER_CUBIC)
+                result.write(warped)
+            else:
+                break
+
+        video.release()
+        result.release()
+
+        cv2.destroyAllWindows()
+        
+        print("The Transformed video was successfully saved")
+        print("------------------------------------------------")
 
 
 if __name__ == '__main__':
